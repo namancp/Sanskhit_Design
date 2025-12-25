@@ -4,13 +4,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Aaiena Poster Studio</title>
+    <title>Aaiena Design Studio</title>
     
-    <!-- Tailwind and Fonts -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Babel for on-the-fly TSX transpilation (Crucial for GitHub Pages) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <style>
@@ -19,30 +16,29 @@
         background-color: #050505;
         color: #f8fafc;
         margin: 0;
-        padding: 0;
+        overflow: hidden;
       }
       #root:empty::before {
-        content: 'Initializing Studio...';
+        content: 'Launching Aaiena Studio...';
         position: absolute;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        font-family: 'Inter', sans-serif;
         font-weight: 900;
         text-transform: uppercase;
-        letter-spacing: 0.2em;
+        letter-spacing: 0.3em;
         color: #1e293b;
-        font-size: 10px;
+        font-size: 12px;
+        animation: pulse 2s infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 0.5; }
+        50% { opacity: 1; }
       }
     </style>
 
     <script type="text/javascript">
-      // SHIM: Define process.env to prevent "process is not defined" error on static hosts
-      window.process = {
-        env: {
-          API_KEY: "" // Will be injected by the environment or manually if needed
-        }
-      };
+      window.process = { env: { API_KEY: "" } };
     </script>
 
     <script type="importmap">
@@ -60,7 +56,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <!-- Load index.tsx using Babel so browser understands JSX/TSX -->
     <script type="text/babel" data-type="module" data-presets="typescript,react" src="./index.tsx"></script>
   </body>
 </html>
