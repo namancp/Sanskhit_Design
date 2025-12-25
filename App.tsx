@@ -3,6 +3,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { generatePosterBackground } from './services/gemini';
 import { AspectRatio, PosterConfig, AAINEA_LOGO_DEFAULT, ElementPos } from './types';
 
+const SNAP_SIZE = 2; // Grid snap percentage
+
 interface DragState {
   key: keyof PosterConfig;
   offsetX: number;
@@ -32,17 +34,18 @@ const App: React.FC = () => {
     bgColorBadge1: "rgba(0, 0, 0, 0.6)",
     bgColorBadge2: "rgba(37, 99, 235, 0.6)",
     posLogo: { x: 5, y: 5, scale: 1.0, visible: true },
-    posBrand: { x: 50, y: 10, scale: 1.0, visible: true },
-    posEventName: { x: 50, y: 62, scale: 1.0, visible: true },
-    posBadges: { x: 5, y: 15, scale: 1.0, visible: true },
-    posHeadline: { x: 50, y: 70, scale: 1.0, visible: true },
-    posSubHeadline: { x: 50, y: 78, scale: 1.0, visible: true },
-    posCTA: { x: 50, y: 90, scale: 1.0, visible: true },
+    posBrand: { x: 50, y: 10, scale: 1.0, visible: true, bold: true, italic: false },
+    posEventName: { x: 50, y: 62, scale: 1.0, visible: true, bold: true, italic: false },
+    posBadges: { x: 5, y: 15, scale: 1.0, visible: true, bold: true, italic: false },
+    posHeadline: { x: 50, y: 70, scale: 1.0, visible: true, bold: true, italic: false },
+    posSubHeadline: { x: 50, y: 78, scale: 1.0, visible: true, bold: false, italic: false },
+    posCTA: { x: 50, y: 90, scale: 1.0, visible: true, bold: true, italic: false },
     posQR: { x: 85, y: 85, scale: 1.0, visible: false }
   });
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeDrag, setActiveDrag] = useState<DragState | null>(null);
+  const [selectedElement, setSelectedElement] = useState<keyof PosterConfig | null>(null);
   const [showDeployModal, setShowDeployModal] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -88,12 +91,17 @@ const App: React.FC = () => {
     const elements: (keyof PosterConfig)[] = ['posLogo', 'posBrand', 'posEventName', 'posBadges', 'posHeadline', 'posSubHeadline', 'posCTA', 'posQR'];
     
     let closest: keyof PosterConfig | null = null;
-    let minDist = 12;
+    let minDist = 10; // Detection radius in percentage
 
     elements.forEach(key => {
       const item = config[key] as ElementPos;
       if (!item || !item.visible) return;
-      const d = Math.sqrt(Math.pow(pos.x - item.x, 2) + Math.pow(pos.y - item.y, 2));
+      
+      // Calculate distance considering text might be wider than a point
+      const dx = pos.x - item.x;
+      const dy = pos.y - item.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      
       if (d < minDist) {
         minDist = d;
         closest = key;
@@ -102,12 +110,15 @@ const App: React.FC = () => {
     
     if (closest) {
       const item = config[closest] as ElementPos;
+      setSelectedElement(closest);
       setActiveDrag({
         key: closest,
         offsetX: pos.x - item.x,
         offsetY: pos.y - item.y
       });
       e.preventDefault();
+    } else {
+      setSelectedElement(null);
     }
   };
 
@@ -115,12 +126,23 @@ const App: React.FC = () => {
     if (!activeDrag) return;
     const pos = getCanvasMousePos(e);
     
+    let newX = pos.x - activeDrag.offsetX;
+    let newY = pos.y - activeDrag.offsetY;
+
+    // Apply Snapping
+    newX = Math.round(newX / SNAP_SIZE) * SNAP_SIZE;
+    newY = Math.round(newY / SNAP_SIZE) * SNAP_SIZE;
+
+    // Boundaries
+    newX = Math.max(0, Math.min(100, newX));
+    newY = Math.max(0, Math.min(100, newY));
+    
     setConfig(prev => ({
       ...prev,
       [activeDrag.key]: { 
         ...(prev[activeDrag.key] as ElementPos), 
-        x: Math.max(0, Math.min(100, pos.x - activeDrag.offsetX)), 
-        y: Math.max(0, Math.min(100, pos.y - activeDrag.offsetY))
+        x: newX, 
+        y: newY
       }
     }));
   };
@@ -142,7 +164,13 @@ const App: React.FC = () => {
     ctx.fillText(line, x, curY);
   };
 
-  const drawCanvas = useCallback(() => {
+  const getFontStyle = (pos: ElementPos, baseSize: number, canvasWidth: number) => {
+    const italic = pos.italic ? 'italic ' : '';
+    const bold = pos.bold ? 'bold ' : '';
+    return `${italic}${bold}${canvasWidth * baseSize * pos.scale}px Inter`;
+  };
+
+  const drawCanvas = useCallback((isExporting = false) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -157,6 +185,7 @@ const App: React.FC = () => {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
+    // Background
     if (bgImgRef.current && bgImgRef.current.complete) {
       ctx.drawImage(bgImgRef.current, 0, 0, canvas.width, canvas.height);
     } else {
@@ -167,30 +196,55 @@ const App: React.FC = () => {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 
+    // Grid Overlay (UI Only)
+    if (!isExporting) {
+      ctx.strokeStyle = "rgba(255,255,255,0.05)";
+      ctx.lineWidth = 1;
+      for(let i=0; i<=100; i+=SNAP_SIZE) {
+        ctx.beginPath(); ctx.moveTo(px(i), 0); ctx.lineTo(px(i), canvas.height); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, py(i)); ctx.lineTo(canvas.width, py(i)); ctx.stroke();
+      }
+    }
+
+    // Elements
     if (config.posLogo.visible && logoImgRef.current?.complete) {
       const lw = (canvas.width * 0.18) * config.posLogo.scale;
       const lh = (logoImgRef.current.height / logoImgRef.current.width) * lw;
       ctx.drawImage(logoImgRef.current, px(config.posLogo.x), py(config.posLogo.y), lw, lh);
+      if(!isExporting && selectedElement === 'posLogo') {
+        ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 4;
+        ctx.strokeRect(px(config.posLogo.x)-5, py(config.posLogo.y)-5, lw+10, lh+10);
+      }
     }
 
     if (config.posBrand.visible) {
       ctx.textAlign = "center";
       ctx.fillStyle = config.colorBrand;
-      ctx.font = `bold ${canvas.width * 0.04 * config.posBrand.scale}px Inter`;
+      ctx.font = getFontStyle(config.posBrand, 0.04, canvas.width);
       ctx.fillText(config.brandName.toUpperCase(), px(config.posBrand.x), py(config.posBrand.y));
+      if(!isExporting && selectedElement === 'posBrand') {
+        const tw = ctx.measureText(config.brandName.toUpperCase()).width;
+        ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 4;
+        ctx.strokeRect(px(config.posBrand.x) - (tw/2) - 10, py(config.posBrand.y) - 40, tw+20, 60);
+      }
     }
 
     if (config.posEventName.visible) {
       ctx.textAlign = "center";
       ctx.fillStyle = config.colorEvent;
-      ctx.font = `bold ${canvas.width * 0.03 * config.posEventName.scale}px Inter`;
+      ctx.font = getFontStyle(config.posEventName, 0.03, canvas.width);
       ctx.fillText(config.eventName.toUpperCase(), px(config.posEventName.x), py(config.posEventName.y));
+      if(!isExporting && selectedElement === 'posEventName') {
+        const tw = ctx.measureText(config.eventName.toUpperCase()).width;
+        ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 4;
+        ctx.strokeRect(px(config.posEventName.x) - (tw/2) - 10, py(config.posEventName.y) - 30, tw+20, 45);
+      }
     }
 
     if (config.posBadges.visible) {
       ctx.textAlign = "left";
       const scale = config.posBadges.scale;
-      ctx.font = `600 ${canvas.width * 0.026 * scale}px Inter`;
+      ctx.font = getFontStyle(config.posBadges, 0.026, canvas.width);
       const durTxt = config.duration;
       const prTxt = config.price;
       
@@ -204,23 +258,37 @@ const App: React.FC = () => {
       const pW = (ctx.measureText(prTxt).width + 34);
       ctx.beginPath(); ctx.roundRect(px(config.posBadges.x) + dW + (15 * scale), py(config.posBadges.y), pW, bH, 10 * scale); ctx.fill();
       ctx.fillStyle = config.colorBadges; ctx.fillText(prTxt, px(config.posBadges.x) + dW + (32 * scale), py(config.posBadges.y) + (bH/2) + (10 * scale));
+      
+      if(!isExporting && selectedElement === 'posBadges') {
+        ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 4;
+        ctx.strokeRect(px(config.posBadges.x)-5, py(config.posBadges.y)-5, dW + pW + (15*scale) + 10, bH + 10);
+      }
     }
 
     if (config.posHeadline.visible) {
       ctx.textAlign = "center";
       ctx.fillStyle = config.colorHeadline;
-      ctx.font = `900 ${canvas.width * 0.08 * config.posHeadline.scale}px Inter`;
-      ctx.shadowBlur = 20; ctx.shadowColor = "rgba(0,0,0,0.5)";
+      ctx.font = getFontStyle(config.posHeadline, 0.08, canvas.width);
+      ctx.shadowBlur = isExporting ? 20 : 0; ctx.shadowColor = "rgba(0,0,0,0.5)";
       ctx.fillText(config.headline, px(config.posHeadline.x), py(config.posHeadline.y));
       ctx.shadowBlur = 0;
+      if(!isExporting && selectedElement === 'posHeadline') {
+        const tw = ctx.measureText(config.headline).width;
+        ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 4;
+        ctx.strokeRect(px(config.posHeadline.x) - (tw/2) - 10, py(config.posHeadline.y) - 60, tw+20, 80);
+      }
     }
 
     if (config.posSubHeadline.visible) {
       ctx.textAlign = "center";
       ctx.fillStyle = config.colorSubHeadline;
       const scale = config.posSubHeadline.scale;
-      ctx.font = `500 ${canvas.width * 0.038 * scale}px Inter`;
+      ctx.font = getFontStyle(config.posSubHeadline, 0.038, canvas.width);
       wrapText(ctx, config.subHeadline, px(config.posSubHeadline.x), py(config.posSubHeadline.y), canvas.width * 0.85, canvas.width * 0.055 * scale);
+      if(!isExporting && selectedElement === 'posSubHeadline') {
+        ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 4;
+        ctx.strokeRect(px(config.posSubHeadline.x) - (canvas.width * 0.425), py(config.posSubHeadline.y) - 30, canvas.width * 0.85, 100);
+      }
     }
 
     if (config.posQR.visible && qrImgRef.current?.complete) {
@@ -228,12 +296,16 @@ const App: React.FC = () => {
       ctx.fillStyle = "white";
       ctx.fillRect(px(config.posQR.x) - (6 * config.posQR.scale), py(config.posQR.y) - (6 * config.posQR.scale), qw + (12 * config.posQR.scale), qw + (12 * config.posQR.scale));
       ctx.drawImage(qrImgRef.current, px(config.posQR.x), py(config.posQR.y), qw, qw);
+      if(!isExporting && selectedElement === 'posQR') {
+        ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 4;
+        ctx.strokeRect(px(config.posQR.x)-10, py(config.posQR.y)-10, qw+20, qw+20);
+      }
     }
 
     if (config.posCTA.visible) {
       ctx.textAlign = "center";
       const scale = config.posCTA.scale;
-      ctx.font = `900 ${canvas.width * 0.045 * scale}px Inter`;
+      ctx.font = getFontStyle(config.posCTA, 0.045, canvas.width);
       const txt = config.ctaText.toUpperCase();
       const cW = (ctx.measureText(txt).width + 80);
       const cH = (canvas.width * 0.11) * scale;
@@ -241,8 +313,25 @@ const App: React.FC = () => {
       ctx.fillStyle = config.bgColorCTA;
       ctx.beginPath(); ctx.roundRect(px(config.posCTA.x) - (cW/2), py(config.posCTA.y), cW, cH, 20 * scale); ctx.fill();
       ctx.fillStyle = config.colorCTA; ctx.fillText(txt, px(config.posCTA.x), py(config.posCTA.y) + (cH/2) + (12 * scale));
+      
+      if(!isExporting && selectedElement === 'posCTA') {
+        ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 4;
+        ctx.strokeRect(px(config.posCTA.x) - (cW/2) - 5, py(config.posCTA.y) - 5, cW + 10, cH + 10);
+      }
     }
-  }, [config]);
+
+    // Snapping Guides (Visible only when dragging)
+    if (!isExporting && activeDrag) {
+      // Cast to ElementPos to access x and y properties safely
+      const pos = config[activeDrag.key] as ElementPos;
+      ctx.strokeStyle = "rgba(59, 130, 246, 0.5)";
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath(); ctx.moveTo(px(pos.x), 0); ctx.lineTo(px(pos.x), canvas.height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, py(pos.y)); ctx.lineTo(canvas.width, py(pos.y)); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+  }, [config, activeDrag, selectedElement]);
 
   useEffect(() => {
     const l = new Image(); l.crossOrigin = "anonymous"; l.src = config.logoUrl;
@@ -283,16 +372,29 @@ const App: React.FC = () => {
     }));
   };
 
+  const toggleStyle = (key: keyof PosterConfig, style: 'bold' | 'italic') => {
+    setConfig(prev => {
+      const current = prev[key] as ElementPos;
+      return {
+        ...prev,
+        [key]: { ...current, [style]: !current[style] }
+      };
+    });
+  };
+
   const handleExport = () => {
+    drawCanvas(true);
     const canvas = canvasRef.current;
     if (!canvas) return;
     const link = document.createElement('a');
     link.download = `aaiena-poster-${Date.now()}.png`;
     link.href = canvas.toDataURL('image/png', 1.0);
     link.click();
+    setTimeout(() => drawCanvas(false), 100);
   };
 
   const handleShare = async () => {
+    drawCanvas(true);
     const canvas = canvasRef.current;
     if (!canvas) return;
     
@@ -312,9 +414,10 @@ const App: React.FC = () => {
       console.error("Share failed:", err);
       handleExport();
     }
+    setTimeout(() => drawCanvas(false), 100);
   };
 
-  useEffect(() => { drawCanvas(); }, [config, drawCanvas]);
+  useEffect(() => { drawCanvas(false); }, [config, drawCanvas]);
 
   return (
     <div className="h-screen bg-[#050505] text-slate-300 font-sans flex flex-col overflow-hidden">
@@ -345,7 +448,7 @@ const App: React.FC = () => {
             onClick={() => setShowDeployModal(true)}
             className="flex items-center gap-2 bg-white/5 text-slate-400 border border-white/10 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all hover:bg-white/10 hover:text-white"
           >
-            <span>Deploy Help</span>
+            <span>Deploy Guide</span>
           </button>
           <button 
             onClick={handleExport}
@@ -375,7 +478,8 @@ const App: React.FC = () => {
               
               {activeDrag && (
                 <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-1.5 rounded-full text-[9px] font-black uppercase shadow-2xl animate-pulse">
-                  Adjusting {activeDrag.key.replace('pos', '')}
+                  {/* Cast to ElementPos as we only drag position-based keys */}
+                  Snapping to {(config[activeDrag.key] as ElementPos).x}%, {(config[activeDrag.key] as ElementPos).y}%
                 </div>
               )}
 
@@ -390,8 +494,8 @@ const App: React.FC = () => {
           
           <div className="mt-8 flex items-center gap-4">
              <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-full">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Aaiena Production Studio 1.0</span>
-                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Snap-Grid Active ({SNAP_SIZE}%)</span>
+                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
              </div>
           </div>
         </section>
@@ -500,21 +604,44 @@ const App: React.FC = () => {
                       { key: 'bgColorBadge2', label: 'Badge 2 Fill' }
                     ]
                   },
+                  { key: 'posSubHeadline', label: 'Sub Headline', color: 'colorSubHeadline' },
                   { key: 'posCTA', label: 'Conversion Button', color: 'colorCTA', bg: 'bgColorCTA' },
                   { key: 'posQR', label: 'QR Destination', color: null }
                 ].map(({key, label, color, bg, extraColors}) => (
-                  <div key={key} className={`p-5 rounded-2xl border transition-all ${activeDrag?.key === key ? 'bg-blue-600/10 border-blue-500/50 scale-[1.02]' : 'bg-white/[0.02] border-white/5'}`}>
+                  <div 
+                    key={key} 
+                    onClick={() => setSelectedElement(key as keyof PosterConfig)}
+                    className={`p-5 rounded-2xl border transition-all cursor-pointer ${selectedElement === key ? 'bg-blue-600/10 border-blue-500/50 scale-[1.02]' : 'bg-white/[0.02] border-white/5 hover:border-white/20'}`}
+                  >
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2">
-                         <div className={`w-1.5 h-1.5 rounded-full ${activeDrag?.key === key ? 'bg-blue-500 animate-pulse' : 'bg-slate-700'}`}></div>
+                         <div className={`w-1.5 h-1.5 rounded-full ${selectedElement === key ? 'bg-blue-500 animate-pulse' : 'bg-slate-700'}`}></div>
                          <span className="text-[10px] font-black uppercase text-slate-300 tracking-tight">{label}</span>
                       </div>
-                      <button 
-                        onClick={() => setConfig(prev => ({ ...prev, [key]: { ...(prev[key] as ElementPos), visible: !(prev[key] as ElementPos).visible } }))}
-                        className={`text-[8px] px-3 py-1 rounded-full font-black transition-all ${ (config[key as keyof PosterConfig] as ElementPos)?.visible ? 'bg-white text-black' : 'bg-white/5 text-slate-600' }`}
-                      >
-                        { (config[key as keyof PosterConfig] as ElementPos)?.visible ? 'ACTIVE' : 'MUTED' }
-                      </button>
+                      <div className="flex gap-2">
+                        {key !== 'posLogo' && key !== 'posQR' && (
+                          <>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); toggleStyle(key as keyof PosterConfig, 'bold'); }}
+                              className={`w-6 h-6 flex items-center justify-center rounded-md text-[10px] font-bold border ${ (config[key as keyof PosterConfig] as ElementPos)?.bold ? 'bg-white text-black border-white' : 'border-white/20 text-slate-500 hover:text-white' }`}
+                            >
+                              B
+                            </button>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); toggleStyle(key as keyof PosterConfig, 'italic'); }}
+                              className={`w-6 h-6 flex items-center justify-center rounded-md text-[10px] italic font-serif border ${ (config[key as keyof PosterConfig] as ElementPos)?.italic ? 'bg-white text-black border-white' : 'border-white/20 text-slate-500 hover:text-white' }`}
+                            >
+                              I
+                            </button>
+                          </>
+                        )}
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setConfig(prev => ({ ...prev, [key]: { ...(prev[key] as ElementPos), visible: !(prev[key] as ElementPos).visible } })); }}
+                          className={`text-[8px] px-3 py-1 rounded-full font-black transition-all ${ (config[key as keyof PosterConfig] as ElementPos)?.visible ? 'bg-white text-black' : 'bg-white/5 text-slate-600' }`}
+                        >
+                          { (config[key as keyof PosterConfig] as ElementPos)?.visible ? 'ACTIVE' : 'MUTED' }
+                        </button>
+                      </div>
                     </div>
                     { (config[key as keyof PosterConfig] as ElementPos)?.visible && (
                       <div className="space-y-5">
@@ -566,36 +693,51 @@ const App: React.FC = () => {
           <div className="bg-[#121212] border border-white/10 max-w-2xl w-full rounded-[2.5rem] p-8 space-y-8 shadow-[0_0_100px_rgba(0,0,0,0.8)] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Deployment Center</h2>
-                <p className="text-xs text-slate-500 uppercase font-bold tracking-widest mt-1">Manual Publishing Guide</p>
+                <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Publishing Center</h2>
+                <p className="text-xs text-slate-500 uppercase font-bold tracking-widest mt-1">GitHub & Manual Guides</p>
               </div>
               <button onClick={() => setShowDeployModal(false)} className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-full flex items-center justify-center text-xl">✕</button>
             </div>
 
             <div className="grid gap-6">
-              {/* Option 1: GitHub Auth Fix */}
-              <div className="bg-blue-600/5 border border-blue-500/20 p-6 rounded-3xl space-y-3">
+              {/* Manual Upload Section */}
+              <div className="bg-blue-600/10 border border-blue-500/20 p-6 rounded-3xl space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">1</div>
-                  <h3 className="text-sm font-black text-white uppercase">Fixing GitHub Auth</h3>
+                  <h3 className="text-sm font-black text-white uppercase">GitHub Pages: Manual Setup</h3>
                 </div>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  If the GitHub link failed with an "Authentication Error", try these steps:
-                  <ul className="list-disc ml-4 mt-2 space-y-1">
-                    <li>Logout from this platform and log back in.</li>
-                    <li>Ensure you have granted "Repository" permissions to the app.</li>
-                    <li>Check if your GitHub account has a verified email.</li>
-                  </ul>
-                </p>
+                <div className="text-xs text-slate-400 space-y-3 leading-relaxed">
+                  <p>If the auto-publish is failing, follow these steps to host on <strong>GitHub Pages</strong> manually:</p>
+                  <ol className="list-decimal ml-5 space-y-2">
+                    <li>Create a <strong>New Repository</strong> on GitHub.com (e.g., <code className="text-blue-400">aaiena-studio</code>).</li>
+                    <li>Upload all files from your project folder to the repository.</li>
+                    <li>Go to your Repo <strong>Settings</strong> > <strong>Pages</strong>.</li>
+                    <li>Under "Build and deployment", select <strong>Branch: main</strong> and folder <strong>/(root)</strong>.</li>
+                    <li>Click <strong>Save</strong>. Your site will be live at <code className="text-blue-400">username.github.io/aaiena-studio</code>.</li>
+                  </ol>
+                </div>
               </div>
 
-              {/* Option 2: Manual Publish */}
+              {/* Troubleshooting Section */}
               <div className="bg-white/5 border border-white/10 p-6 rounded-3xl space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center text-white font-bold">2</div>
-                  <h3 className="text-sm font-black text-white uppercase">Manual Publication (Plan B)</h3>
+                  <h3 className="text-sm font-black text-white uppercase">Fixing Authentication Errors</h3>
                 </div>
-                <p className="text-xs text-slate-400">Can't connect GitHub? Don't worry. You can manually host this in 2 minutes:</p>
+                <p className="text-xs text-slate-400">If you see "Danger Zone" or "Uninstall":</p>
+                <ul className="list-disc ml-5 text-xs text-slate-500 space-y-1">
+                  <li>Choose <strong>Uninstall</strong> to clear the broken token.</li>
+                  <li>Refresh this page and try connecting again.</li>
+                  <li>Ensure your GitHub account has a verified primary email.</li>
+                </ul>
+              </div>
+
+              {/* Alternative Deployment Section */}
+              <div className="bg-white/5 border border-white/10 p-6 rounded-3xl space-y-3">
+                <div className="flex items-center gap-3">
+                   <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center text-white font-bold">3</div>
+                   <h3 className="text-sm font-black text-white uppercase">One-Click Deployment (Recommended)</h3>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <a href="https://app.netlify.com/drop" target="_blank" className="bg-white/5 border border-white/10 p-4 rounded-2xl text-center hover:bg-white/10 transition-all">
                     <span className="block text-[18px] mb-1">🔗</span>
@@ -607,29 +749,10 @@ const App: React.FC = () => {
                   </a>
                 </div>
               </div>
-
-              {/* Option 3: Copy Code */}
-              <div className="bg-white/5 border border-white/10 p-6 rounded-3xl space-y-3">
-                <div className="flex items-center gap-3">
-                   <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center text-white font-bold">3</div>
-                   <h3 className="text-sm font-black text-white uppercase">Export Configuration</h3>
-                </div>
-                <button 
-                  onClick={() => {
-                    const blob = new Blob([JSON.stringify(config, null, 2)], {type: 'application/json'});
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = url; link.download = 'aaiena-config.json'; link.click();
-                  }}
-                  className="w-full py-4 bg-white text-black rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
-                >
-                  Download Project JSON Config
-                </button>
-              </div>
             </div>
             
             <p className="text-center text-[9px] text-slate-600 font-bold uppercase tracking-widest">
-              Aaiena Studio Technical Support Tool
+              Aaiena Studio Deployment Support
             </p>
           </div>
         </div>
@@ -647,7 +770,7 @@ const App: React.FC = () => {
         </button>
         <button onClick={() => setShowDeployModal(true)} className="flex flex-col items-center gap-1.5 group">
           <div className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center text-xl transition-all active:scale-90 group-hover:bg-white/10">ℹ️</div>
-          <span className="text-[8px] font-black uppercase text-slate-500">Deploy Help</span>
+          <span className="text-[8px] font-black uppercase text-slate-500">Deploy</span>
         </button>
       </footer>
     </div>

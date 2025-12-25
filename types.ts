@@ -11,6 +11,8 @@ export interface ElementPos {
   y: number; // percentage 0-100
   scale: number; // multiplier 0.1 to 3.0
   visible: boolean;
+  bold?: boolean;
+  italic?: boolean;
 }
 
 export interface PosterConfig {
