@@ -6,8 +6,14 @@ export const generatePosterBackground = async (
   prompt: string,
   aspectRatio: AspectRatio
 ): Promise<string> => {
-  // Use direct process.env.API_KEY as per guidelines
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = process.env.API_KEY;
+  
+  if (!apiKey) {
+    console.warn("API_KEY is missing. Background generation will fail.");
+    throw new Error("Missing API_KEY. Please set your Gemini API key.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   
   try {
     const response = await ai.models.generateContent({
@@ -39,7 +45,7 @@ export const generatePosterBackground = async (
     
     throw new Error("Empty model response");
   } catch (error) {
-    console.error("Gemini NanoBanana Error:", error);
+    console.error("Gemini Image Gen Error:", error);
     throw error;
   }
 };
