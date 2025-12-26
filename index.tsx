@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import { GoogleGenAI } from "@google/genai";
 
-// --- FROM types.ts (EXACT) ---
+// --- FROM types.ts (CONSOLIDATED) ---
 export enum AspectRatio {
   SQUARE = "1:1",
   STORY = "9:16",
@@ -53,16 +53,16 @@ export interface PosterConfig {
 
 export const AAINEA_LOGO_DEFAULT = "https://aaiena.com/wp-content/uploads/2023/12/aaiena-logo-01.png";
 
-// --- FROM services/gemini.ts (EXACT) ---
+// --- FROM services/gemini.ts (CONSOLIDATED & REFINED) ---
 const generatePosterBackground = async (
   prompt: string,
   aspectRatio: AspectRatio
 ): Promise<string> => {
-  const apiKey = (process.env as any).API_KEY;
+  // Use a fallback check for the API key
+  const apiKey = process.env.API_KEY || (window as any).process?.env?.API_KEY;
   
   if (!apiKey) {
-    console.warn("API_KEY is missing. Background generation will fail.");
-    throw new Error("Missing API_KEY. Please set your Gemini API key.");
+    throw new Error("Missing API Key. Please ensure your Gemini API key is configured.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -95,14 +95,14 @@ const generatePosterBackground = async (
       }
     }
     
-    throw new Error("Empty model response");
-  } catch (error) {
+    throw new Error("The model did not return an image. Please try a different description.");
+  } catch (error: any) {
     console.error("Gemini Image Gen Error:", error);
     throw error;
   }
 };
 
-// --- FROM App.tsx (EXACT UI & LOGIC) ---
+// --- FROM App.tsx (FULL UI & INTERACTIVE LOGIC) ---
 const SNAP_SIZE = 2; // Grid snap percentage
 
 interface DragState {
@@ -144,6 +144,7 @@ const App: React.FC = () => {
   });
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeDrag, setActiveDrag] = useState<DragState | null>(null);
   const [selectedElement, setSelectedElement] = useState<keyof PosterConfig | null>(null);
   const [showDeployModal, setShowDeployModal] = useState(false);
@@ -431,9 +432,10 @@ const App: React.FC = () => {
 
   const handleGenerate = async () => {
     setIsGenerating(true);
+    setErrorMsg(null);
     try {
       const data = await generatePosterBackground(config.theme, config.aspectRatio);
-      if (!data) throw new Error("No image data received");
+      if (!data) throw new Error("No image data received from AI service.");
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = () => {
@@ -441,10 +443,14 @@ const App: React.FC = () => {
         drawCanvas();
         setIsGenerating(false);
       };
-      img.onerror = () => setIsGenerating(false);
+      img.onerror = () => {
+        setIsGenerating(false);
+        setErrorMsg("Failed to load the generated image into the canvas.");
+      };
       img.src = data;
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMsg(e.message || "An unexpected error occurred during generation.");
       setIsGenerating(false);
     }
   };
@@ -542,6 +548,11 @@ const App: React.FC = () => {
                 <div className="absolute inset-0 bg-black/80 backdrop-blur-xl flex flex-col items-center justify-center z-50 rounded-[2.2rem]">
                   <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4"></div>
                   <p className="text-white font-black uppercase tracking-[0.4em] text-[10px]">Processing AI Vision</p>
+                </div>
+              )}
+              {errorMsg && (
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-red-600/90 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase shadow-2xl z-[60] border border-red-400/50 backdrop-blur-md">
+                  ⚠️ {errorMsg}
                 </div>
               )}
             </div>
@@ -766,7 +777,7 @@ const App: React.FC = () => {
   );
 };
 
-// --- MOUNTING (EXACT) ---
+// --- MOUNTING (STANDALONE COMPATIBLE) ---
 const container = document.getElementById('root');
 if (container) {
   const root = createRoot(container);

@@ -37,12 +37,10 @@
     </style>
 
     <script type="text/javascript">
-      // SHIM: Define process.env to prevent "process is not defined" error
-      window.process = {
-        env: {
-          API_KEY: "" 
-        }
-      };
+      // SAFE SHIM: Only define process.env if it doesn't already exist.
+      // Do NOT set API_KEY to "" here, as the environment will inject it.
+      window.process = window.process || {};
+      window.process.env = window.process.env || {};
     </script>
 
     <script type="importmap">
