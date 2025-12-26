@@ -61,7 +61,7 @@ const generatePosterBackground = async (
   // Obtain the API Key exclusively from the environment variable process.env.API_KEY
   const apiKey = process.env.API_KEY;
   
-  if (!apiKey || apiKey === "YOUR_API_KEY_HERE") {
+  if (!apiKey || apiKey === "AIzaSyA41f3i98OZfGIQONrz7Co59XMKnTDv_2Y") {
     throw new Error("Missing API Key. Please update YOUR_API_KEY_HERE in index.html.");
   }
 
