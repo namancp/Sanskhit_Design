@@ -22,7 +22,7 @@
         padding: 0;
       }
       #root:empty::before {
-        content: 'Initializing Studio...';
+        content: 'Initializing Aaiena Studio...';
         position: absolute;
         top: 50%;
         left: 50%;
@@ -37,10 +37,10 @@
     </style>
 
     <script type="text/javascript">
-      // SHIM: Define process.env to prevent "process is not defined" error on static hosts
+      // SHIM: Define process.env to prevent "process is not defined" error
       window.process = {
         env: {
-          API_KEY: "" // Will be injected by the environment or manually if needed
+          API_KEY: "" 
         }
       };
     </script>
@@ -60,7 +60,7 @@
   </head>
   <body>
     <div id="root"></div>
-    <!-- Load index.tsx using Babel so browser understands JSX/TSX -->
+    <!-- Load index.tsx using Babel so browser understands JSX/TSX and merged code -->
     <script type="text/babel" data-type="module" data-presets="typescript,react" src="./index.tsx"></script>
   </body>
 </html>
