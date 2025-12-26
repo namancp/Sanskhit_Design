@@ -10,7 +10,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- Babel for on-the-fly TSX transpilation (Crucial for GitHub Pages) -->
+    <!-- Babel for on-the-fly TSX transpilation -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <style>
@@ -37,10 +37,12 @@
     </style>
 
     <script type="text/javascript">
-      // SAFE SHIM: Only define process.env if it doesn't already exist.
-      // Do NOT set API_KEY to "" here, as the environment will inject it.
+      // Initialize the process.env object for the browser
       window.process = window.process || {};
       window.process.env = window.process.env || {};
+      
+      // PASTE YOUR GEMINI API KEY BELOW
+      window.process.env.API_KEY = "YOUR_API_KEY_HERE";
     </script>
 
     <script type="importmap">
@@ -58,7 +60,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <!-- Load index.tsx using Babel so browser understands JSX/TSX and merged code -->
     <script type="text/babel" data-type="module" data-presets="typescript,react" src="./index.tsx"></script>
   </body>
 </html>
